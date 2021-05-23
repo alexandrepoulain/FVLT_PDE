@@ -1,0 +1,109 @@
+function [fluxm_h,fluxn_h] = flux_y(m,n,p,dt,h,nbx,nby)
+%FLUX_X Compute fluxes across the x boundary
+
+
+fluxm_h = zeros(nby+1,nbx); fluxn_h=zeros(nby+1,nbx);
+
+% derivatives of p with respect to m and n
+dnp = Kgam*gam*(m+n).^(gam-1);
+dmp=dnp;
+
+% calculating flux
+for ii=1:nbx
+    for jj= 2:nbx-1
+
+        % derivative of fluxes
+        % First order upwind scheme
+
+            vnmip12 = (n(jj,ii)*(dmp(jj,ii))+n(jj+1,ii)*(dmp(jj+1,ii)))*0.5*(m(jj+1,ii)-m(jj,ii))/h;
+            vmmip12 = (p(jj+1,ii)-p(jj,ii))/h + (m(jj,ii)*(dmp(jj,ii))+m(jj+1,ii)*(dmp(jj+1,ii)))*0.5*(m(jj+1,ii)-m(jj,ii))/h;
+
+            vnmim12 = (n(jj,ii-1)*(dmp(jj,ii-1))+n(jj,ii)*(dmp(jj,ii)))*0.5*(m(jj,ii)-m(jj,ii-1))/h ;
+            vmmim12 = (p(jj,ii)-p(jj,ii-1))/h + (m(jj,ii-1)*(dmp(jj,ii-1))+m(jj,ii)*(dmp(jj,ii)))*0.5*(m(jj,ii)-m(jj,ii-1))/h;
+
+            vnnip12 = (p(jj+1,ii)-p(jj,ii))/h + (n(jj,ii)*dnp(jj,ii)+n(jj+1,ii)*dnp(jj+1,ii))*0.5*(n(jj+1,ii)-n(jj,ii))/h;
+            vmnip12 = (m(jj,ii)*dnp(jj,ii)+m(jj+1,ii)*dnp(jj+1,ii))*0.5*(n(jj+1,ii)-n(jj,ii))/h;
+
+            vnnim12 = (p(jj,ii)-p(jj,ii-1))/h + (n(jj,ii-1)*dnp(jj,ii-1)+n(jj,ii)*dnp(jj,ii))*0.5*(n(jj,ii)-n(jj,ii-1))/h;
+            vmnim12 = (m(jj,ii-1)*dnp(jj,ii-1)+m(jj,ii)*dnp(jj,ii))*0.5*(n(jj,ii)-n(jj,ii-1))/h;
+
+
+        % fluxes at interface: first-order upwind
+        if ((p(jj+1,ii)-p(jj,ii)) <= 0)
+            noeud_up_p = ii-1;
+            fmip12 = (m(jj,ii))*((p(jj+1,ii)-p(jj,ii))/h) ;
+            fnip12 = (n(jj,ii))*((p(jj+1,ii)-p(jj,ii))/h);
+        else
+            noeud_up_p = ii+1;
+            fmip12 = (m(jj+1,ii))*((p(jj+1,ii)-p(jj,ii))/h) ;
+            fnip12 = (n(jj+1,ii))*((p(jj+1,ii)-p(jj,ii))/h);
+        end
+        if (p(jj,ii)-p(jj,ii-1)) <= 0
+            noeud_up_m = ii-1;
+            fmim12 = (m(jj,ii-1))*((p(jj,ii)-p(jj,ii-1))/h) ;
+            fnim12 = (n(jj,ii-1))*((p(jj,ii)-p(jj,ii-1))/h);
+        else
+            noeud_up_m = ii+1;
+            fmim12 = (m(jj,ii))*((p(jj,ii)-p(jj,ii-1))/h) ;
+            fnim12 = (n(jj,ii))*((p(jj,ii)-p(jj,ii-1))/h);
+        end
+        if (noeud_up_p == 1)
+            noeud_up_p=2;
+        end
+        if (noeud_up_m == 1)
+            noeud_up_m=2;
+        end
+        % high-order reconstruction
+        % local Courant Number
+        nu_mip12 = (p(jj+1,ii)-p(jj,ii))/h*dt/h;
+        nu_mim12 = fmim12*dt/h;
+        nu_nip12 = fnip12*dt/h;
+        nu_nim12 = fnim12*dt/h;
+
+        fmip12 = fmip12 + (1-abs(nu_mip12))*abs((p(jj+1,ii)-p(jj,ii))/h)*0.5...
+            *(TVD_limiter(m(jj+1,ii)-m(jj,ii),m(noeud_up_p)-m(noeud_up_p-1)));
+        fmim12 = fmim12 + (1-abs(nu_mim12))*abs((p(jj,ii)-p(jj,ii-1))/h)*0.5...
+            *(TVD_limiter(m(jj,ii)-m(jj,ii-1),m(noeud_up_m)-m(noeud_up_m-1)));
+
+        fnip12 = fnip12 + (1-abs(nu_nip12))*abs((p(jj+1,ii)-p(jj,ii))/h)*0.5...
+            *(TVD_limiter(n(jj+1,ii)-n(jj,ii),n(noeud_up_p)-n(noeud_up_p-1)));
+        fnim12 = fnim12 + (1-abs(nu_nim12))*abs((p(jj,ii)-p(jj,ii-1))/h)*0.5...
+            *(TVD_limiter(n(jj,ii)-n(jj,ii-1),n(noeud_up_m)-n(noeud_up_m-1)));
+
+        % difference of fluxes at interface
+        fluxm_h(jj,ii) = fmip12 - fmim12;
+        fluxn_h(jj,ii) = fnip12 - fnim12;
+    end
+
+
+    % boundary conditions: zeros Neumann
+    % left boundary
+    ii=1;
+    if ((p(jj+1,ii)-p(jj,ii)) <= 0)
+        fmip12 = (m(jj,ii))*((p(jj+1,ii)-p(jj,ii))/h) ;
+        fnip12 = (n(jj,ii))*((p(jj+1,ii)-p(jj,ii))/h);
+    else
+        fmip12 = (m(jj+1,ii))*((p(jj+1,ii)-p(jj,ii))/h) ;
+        fnip12 = (n(jj+1,ii))*((p(jj+1,ii)-p(jj,ii))/h);
+    end
+    fluxm_h(jj,ii) = fmip12;
+    fluxn_h(jj,ii) =  fnip12;
+    % Right boundary
+    ii = nbx+1;
+
+    if (p(jj,ii)-p(jj,ii-1)) <= 0
+
+        fmim12 = (m(jj,ii-1))*((p(jj,ii)-p(jj,ii-1))/h) ;
+        fnim12 = (n(jj,ii-1))*((p(jj,ii)-p(jj,ii-1))/h);
+    else
+        fmim12 = (m(jj,ii))*((p(jj,ii)-p(jj,ii-1))/h) ;
+        fnim12 = (n(jj,ii))*((p(jj,ii)-p(jj,ii-1))/h);
+    end
+
+    fluxm_h(jj,ii) = -fmim12;
+    fluxn_h(jj,ii) = -fnim12;
+end
+
+
+end
+
